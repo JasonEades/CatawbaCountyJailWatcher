@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace CatawbaCountyJailWatcher.Service
 {
-    public class ScumBag
+    public class Inmate
     {
 
         public string PictureId { get; set; }

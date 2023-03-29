@@ -24,7 +24,7 @@ namespace CatawbaCountyJailWatcher.Service
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                var scumBags = new List<ScumBag>();
+                var inmates = new List<Inmate>();
 
                 _logger.LogInformation("Request running at: {time}", DateTimeOffset.Now);
 
@@ -48,7 +48,7 @@ namespace CatawbaCountyJailWatcher.Service
                         {
                             // additional offense rows
                             var inneroffense = tds[5].InnerHtml;
-                            scumBags.Last().Crime += $"<br> {inneroffense}";
+                            inmates.Last().Crime += $"<br> {inneroffense}";
                             continue;
                         }
                         var picLink = tds[0].InnerHtml;
@@ -70,7 +70,7 @@ namespace CatawbaCountyJailWatcher.Service
                         }
                         catch { }
 
-                        scumBags.Add(new ScumBag()
+                        inmates.Add(new Inmate()
                         {
                             PictureId = picStr,
                             Name = name,
@@ -90,15 +90,15 @@ namespace CatawbaCountyJailWatcher.Service
 
                 }
 
-                List<ScumBag> namePerps = new List<ScumBag>();
-                List<ScumBag> streetPerps = new List<ScumBag>();
+                List<Inmate> namePerps = new List<Inmate>();
+                List<Inmate> streetPerps = new List<Inmate>();
 
-                var myScumbagNameWatchList = _configuration.GetSection("WatchNames").Get<string[]>().ToList();
-                var myScumbagStreetWatchList = _configuration.GetSection("WatchStreets").Get<string[]>().ToList();
+                var inmateNameWatchList = _configuration.GetSection("WatchNames").Get<string[]>().ToList();
+                var inmateStreetWatchList = _configuration.GetSection("WatchStreets").Get<string[]>().ToList();
 
-                foreach (var name in myScumbagNameWatchList)
+                foreach (var name in inmateNameWatchList)
                 {
-                    var found = scumBags.Where(a => a.Name.Contains(name, StringComparison.InvariantCultureIgnoreCase)).ToList();
+                    var found = inmates.Where(a => a.Name.Contains(name, StringComparison.InvariantCultureIgnoreCase)).ToList();
 
                     if (found == null || found.Count() == 0)
                         continue;
@@ -106,9 +106,9 @@ namespace CatawbaCountyJailWatcher.Service
                     namePerps.AddRange(found);
                 }
 
-                foreach (var street in myScumbagNameWatchList)
+                foreach (var street in inmateStreetWatchList)
                 {
-                    var found = scumBags.Where(a => a.Address.Contains(street, StringComparison.InvariantCultureIgnoreCase)).ToList();
+                    var found = inmates.Where(a => a.Address.Contains(street, StringComparison.InvariantCultureIgnoreCase)).ToList();
 
                     if (found == null || found.Count() == 0)
                         continue;
@@ -119,7 +119,7 @@ namespace CatawbaCountyJailWatcher.Service
                 if (namePerps.Count > 0 || streetPerps.Count > 0)
                 {
                     StringBuilder email = new StringBuilder();
-                    string message = $"Scanning for perps with names containing: {string.Join(", ", myScumbagNameWatchList)}.";
+                    string message = $"Scanning for perps with names containing: {string.Join(", ", inmateNameWatchList)}.";
                     email.Append("<h2>" + message + "</h2>");
                     email.Append("<br>");
 
@@ -155,7 +155,7 @@ namespace CatawbaCountyJailWatcher.Service
                         email.Append("None");
                     }
 
-                    string message2 = $"Scanning for perps with address containing: {string.Join(", ", myScumbagStreetWatchList)}.";
+                    string message2 = $"Scanning for perps with address containing: {string.Join(", ", inmateStreetWatchList)}.";
                     email.Append("<h2>" + message2 + "</h2>");
                     email.Append("<br>");
 
