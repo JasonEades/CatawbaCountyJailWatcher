@@ -5,6 +5,7 @@ IHost host = Host.CreateDefaultBuilder(args)
     {
         services.AddWindowsService();
         services.AddHostedService<Worker>();
+        services.AddMemoryCache();
     })
     .Build();
 

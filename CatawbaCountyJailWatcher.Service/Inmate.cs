@@ -14,7 +14,7 @@ namespace CatawbaCountyJailWatcher.Service
         {
             get
             {
-                return $"https://injail.catawbacountync.gov/WhosInJail/{PictureId}";
+                return $"https://injail.catawbacountync.gov{PictureId}";
             }
         }
 

@@ -4,6 +4,7 @@ using System.Net;
 using System.Text;
 using Azure.Communication.Email;
 using Azure;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace CatawbaCountyJailWatcher.Service
 {
@@ -11,11 +12,13 @@ namespace CatawbaCountyJailWatcher.Service
     {
         private readonly ILogger<Worker> _logger;
         private IConfiguration _configuration;
+        private IMemoryCache _memoryCache;
 
-        public Worker(ILogger<Worker> logger, IConfiguration configuration)
+        public Worker(ILogger<Worker> logger, IConfiguration configuration, IMemoryCache memoryCache)
         {
             _logger = logger;
             _configuration = configuration;
+            _memoryCache = memoryCache;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -103,7 +106,14 @@ namespace CatawbaCountyJailWatcher.Service
                     if (found == null || found.Count() == 0)
                         continue;
 
-                    namePerps.AddRange(found);
+
+                    foreach (var f in found)
+                    {
+                        _logger.LogInformation($"Found perp: {f.Name} with name containing: {name}");
+                        if (!namePerps.Contains(f))
+                            namePerps.Add(f);
+                    }
+
                 }
 
                 foreach (var street in inmateStreetWatchList)
@@ -116,14 +126,30 @@ namespace CatawbaCountyJailWatcher.Service
                     streetPerps.AddRange(found);
                 }
 
-                if (namePerps.Count > 0 || streetPerps.Count > 0)
+                // determine who we have already sent an email about recently
+                _memoryCache.TryGetValue("recently_sent_name_email_perps", out List<Inmate> namePerpsCache);
+                _memoryCache.TryGetValue("recently_sent_street_email_perps", out List<Inmate> streetPerpsCache);
+                
+                if (namePerpsCache == null)
+                    namePerpsCache = new List<Inmate>();
+
+                var newEmailNamePerps = namePerps.Where(a => !namePerpsCache.Contains(a)).ToList();
+
+                if (streetPerpsCache == null)
+                    streetPerpsCache = new List<Inmate>();
+                var newEmailStreetPerps = streetPerps.Where(a => !streetPerpsCache.Contains(a)).ToList();
+
+
+
+                if (newEmailNamePerps.Count > 0 || newEmailStreetPerps.Count > 0)
                 {
                     StringBuilder email = new StringBuilder();
                     string message = $"Scanning for perps with names containing: {string.Join(", ", inmateNameWatchList)}.";
                     email.Append("<h2>" + message + "</h2>");
                     email.Append("<br>");
 
-                    if (namePerps != null && namePerps.Count() > 0)
+
+                    if (newEmailNamePerps != null && newEmailNamePerps.Count() > 0)
                     {
                         email.Append("<table cellpadding=\"0\" cellspacing=\"0\" border=\"1\"> ");
                         email.Append("<thead>");
@@ -137,7 +163,7 @@ namespace CatawbaCountyJailWatcher.Service
 
 
                         email.Append("<tbody>");
-                        foreach (var namePerp in namePerps)
+                        foreach (var namePerp in newEmailNamePerps)
                         {
                             email.Append("<tr>");
                             email.Append($"<td><a href='{namePerp.ImageUrl}'>Mugshot</a></td>");
@@ -160,7 +186,7 @@ namespace CatawbaCountyJailWatcher.Service
                     email.Append("<br>");
 
 
-                    if (streetPerps != null && streetPerps.Count() > 0)
+                    if (newEmailStreetPerps != null && newEmailStreetPerps.Count() > 0)
                     {
                         email.Append("<table cellpadding=\"0\" cellspacing=\"0\" border=\".5\">");
                         email.Append("<thead>");
@@ -174,7 +200,7 @@ namespace CatawbaCountyJailWatcher.Service
 
 
                         email.Append("<tbody>");
-                        foreach (var namePerp in streetPerps)
+                        foreach (var namePerp in newEmailStreetPerps)
                         {
                             email.Append("<tr>");
                             email.Append($"<td><a href='{namePerp.ImageUrl}'>Mugshot</a></td>");
@@ -202,18 +228,40 @@ namespace CatawbaCountyJailWatcher.Service
 
                     foreach (var e in _configuration.GetValue<string>("EmailTo").Split(";"))
                     {
+                        var em = new EmailMessage(_configuration.GetValue<string>("EmailFrom"), e, new EmailContent("Who's In Jail Alert") { Html = email.ToString() });
+
                         var emailSendOperation = emailClient.Send(
-                            wait: WaitUntil.Completed,
-                            from: _configuration.GetValue<string>("EmailFrom"),
-                            to: e,
-                            subject: "Who's In Jail Alert",
-                            htmlContent: email.ToString());
+                            wait: WaitUntil.Completed, em
+                          );
 
 
                         _logger.LogInformation($"Email Sent. Status = {emailSendOperation.Value.Status}");
-                        
+
                         string operationId = emailSendOperation.Id;
                         _logger.LogInformation($"Email operation id = {operationId}");
+                    }
+
+                    
+                    // email has been sent, add these new perps to the cache
+
+                    var cacheTimeSpanHours = _configuration.GetSection("CacheTimeSpanHours").Get<int>();
+
+                    if (newEmailNamePerps?.Count > 0)
+                    {
+                        if (namePerpsCache == null)
+                            namePerpsCache = new List<Inmate>();
+
+                        namePerpsCache.AddRange(newEmailNamePerps);
+                        _memoryCache.Set("recently_sent_name_email_perps", namePerpsCache, TimeSpan.FromHours(cacheTimeSpanHours));
+                    }
+
+                    if (newEmailStreetPerps?.Count > 0)
+                    {
+                        if (streetPerpsCache == null)
+                            streetPerpsCache = new List<Inmate>();
+
+                        streetPerpsCache.AddRange(newEmailStreetPerps);
+                        _memoryCache.Set("recently_sent_street_email_perps", streetPerpsCache, TimeSpan.FromHours(cacheTimeSpanHours));
                     }
 
                 }
@@ -227,7 +275,7 @@ namespace CatawbaCountyJailWatcher.Service
             }
 
 
-            
+
         }
 
     }
